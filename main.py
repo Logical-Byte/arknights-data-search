@@ -60,6 +60,12 @@ class Operator(BaseModel):
     potentials: Optional[List[PotentialInfo]] = None
 
 # --- Data Loading and Parsing ---
+def clean_markup(text: Optional[str]) -> Optional[str]:
+    if text is None:
+        return None
+    # Remove HTML-like tags (e.g., <@ba.kw> and </>)
+    return re.sub(r'<[^>]*>', '', text)
+
 def parse_handbook_info(story_text: str):
     gender_match = re.search(r"【性别】(.*?)\n", story_text)
     birth_place_match = re.search(r"【出身地】(.*?)\n", story_text)
@@ -95,6 +101,7 @@ def load_data():
     for char_id, char_info in character_data.items():
         if not isinstance(char_info, dict): continue # Skip non-dict items like "version"
         char_info["charId"] = char_id
+        char_info["description"] = clean_markup(char_info.get("description")) # Apply clean_markup here
         
         # Add handbook info
         handbook_info = handbook_data.get(char_id)
@@ -123,8 +130,8 @@ def load_data():
                         skill_levels.append(
                             SkillLevel(
                                 level=level_str,
-                                name=level_data.get("name"),
-                                description=level_data.get("description"),
+                                name=clean_markup(level_data.get("name")), # Apply clean_markup here
+                                description=clean_markup(level_data.get("description")), # Apply clean_markup here
                                 spCost=level_data.get("spData", {}).get("spCost", 0),
                                 initialSp=level_data.get("spData", {}).get("initSp", 0),
                                 duration=blackboard.get("duration", 0.0)
@@ -139,7 +146,8 @@ def load_data():
             for i, potential_rank in enumerate(char_info["potentialRanks"]):
                 if potential_rank and potential_rank.get("description"):
                     rank_str = f"潜能{i + 2}"
-                    operator_potentials.append(PotentialInfo(rank=rank_str, description=potential_rank["description"]))
+                    operator_potentials.append(PotentialInfo(rank=rank_str, description=clean_markup(potential_rank["description"]))) # Apply clean_markup here
+
         char_info["potentials"] = operator_potentials
 
         temp_operators_data.append(char_info)
