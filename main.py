@@ -16,6 +16,7 @@ app = FastAPI(
 
 # --- Pydantic Models ---
 class SkillLevel(BaseModel):
+    level: str
     name: Optional[str] = None
     description: Optional[str] = None
     spCost: int
@@ -25,6 +26,10 @@ class SkillLevel(BaseModel):
 class Skill(BaseModel):
     skillId: str
     levels: List[SkillLevel]
+
+class PotentialInfo(BaseModel):
+    rank: str
+    description: str
 
 class Operator(BaseModel):
     charId: str
@@ -52,6 +57,7 @@ class Operator(BaseModel):
     birth_place: Optional[str] = None
     race: Optional[str] = None
     skills: Optional[List[Skill]] = None
+    potentials: Optional[List[PotentialInfo]] = None
 
 # --- Data Loading and Parsing ---
 def parse_handbook_info(story_text: str):
@@ -105,10 +111,18 @@ def load_data():
                 if skill_id and skill_id in skill_data:
                     full_skill_info = skill_data[skill_id]
                     skill_levels = []
-                    for level_data in full_skill_info.get("levels", []):
+                    for i, level_data in enumerate(full_skill_info.get("levels", [])):
                         blackboard = {item["key"]: item["value"] for item in level_data.get("blackboard", [])}
+                        
+                        level_str: str
+                        if i < 7:
+                            level_str = str(i + 1)
+                        else:
+                            level_str = f"专{i - 6}"
+
                         skill_levels.append(
                             SkillLevel(
+                                level=level_str,
                                 name=level_data.get("name"),
                                 description=level_data.get("description"),
                                 spCost=level_data.get("spData", {}).get("spCost", 0),
@@ -118,6 +132,15 @@ def load_data():
                         )
                     operator_skills.append(Skill(skillId=skill_id, levels=skill_levels))
         char_info["skills"] = operator_skills
+
+        # Add potential info
+        operator_potentials = []
+        if char_info.get("potentialRanks"):
+            for i, potential_rank in enumerate(char_info["potentialRanks"]):
+                if potential_rank and potential_rank.get("description"):
+                    rank_str = f"潜能{i + 2}"
+                    operator_potentials.append(PotentialInfo(rank=rank_str, description=potential_rank["description"]))
+        char_info["potentials"] = operator_potentials
 
         temp_operators_data.append(char_info)
     
