@@ -1,34 +1,13 @@
 import json
 import re
-import time
-import logging
-import subprocess
-import threading
-import os
+import urllib.request
 from typing import List, Optional
 
 from fastapi import FastAPI, Query
 from pydantic import BaseModel
 
-# --- Configuration Loading ---
-try:
-    with open("config.json", "r", encoding="utf-8") as f:
-        config = json.load(f)
-except FileNotFoundError:
-    logging.error("config.json not found! Please create it.")
-    # Default config for fallback
-    config = {
-        "active_source": "Logical-Byte",
-        "sources": {
-            "Logical-Byte": {
-                "url": "https://github.com/Logical-Byte/arknights-game-data.git",
-                "path": "arknights-game-data-logical-byte"
-            }
-        },
-        "update_interval_seconds": 3600
-    }
-
-# --- Global Variables ---
+# --- Global Variables & Constants ---
+BASE_URL = "https://torappu.prts.wiki/gamedata/latest/excel/"
 operators_data = []
 app = FastAPI(
     title="Arknights Game Data API",
@@ -36,6 +15,17 @@ app = FastAPI(
 )
 
 # --- Pydantic Models ---
+class SkillLevel(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    spCost: int
+    initialSp: int
+    duration: float
+
+class Skill(BaseModel):
+    skillId: str
+    levels: List[SkillLevel]
+
 class Operator(BaseModel):
     charId: str
     name: str
@@ -61,6 +51,7 @@ class Operator(BaseModel):
     gender: Optional[str] = None
     birth_place: Optional[str] = None
     race: Optional[str] = None
+    skills: Optional[List[Skill]] = None
 
 # --- Data Loading and Parsing ---
 def parse_handbook_info(story_text: str):
@@ -74,104 +65,73 @@ def parse_handbook_info(story_text: str):
         "race": race_match.group(1).strip() if race_match else None,
     }
 
-def load_data(data_path: str):
-    logging.info(f"Loading data from path: {data_path}")
+def load_data():
+    print(f"Loading data from base URL: {BASE_URL}")
     global operators_data
-    
-    char_table_path = os.path.join(data_path, "zh_CN", "gamedata", "excel", "character_table.json")
-    handbook_path = os.path.join(data_path, "zh_CN", "gamedata", "excel", "handbook_info_table.json")
 
-    if not os.path.exists(char_table_path) or not os.path.exists(handbook_path):
-        logging.error(f"Data files not found in {data_path}. Please ensure the data source is cloned and valid.")
+    char_table_url = BASE_URL + "character_table.json"
+    handbook_url = BASE_URL + "handbook_info_table.json"
+    skill_table_url = BASE_URL + "skill_table.json"
+
+    try:
+        with urllib.request.urlopen(char_table_url) as response:
+            character_data = json.load(response)
+        with urllib.request.urlopen(handbook_url) as response:
+            handbook_data = json.load(response).get("handbookDict", {})
+        with urllib.request.urlopen(skill_table_url) as response:
+            skill_data = json.load(response)
+    except Exception as e:
+        print(f"Failed to fetch or parse data from URL: {e}")
         operators_data = []
         return
 
     temp_operators_data = []
-    with open(char_table_path, "r", encoding="utf-8") as f:
-        character_data = json.load(f)
-
-    with open(handbook_path, "r", encoding="utf-8") as f:
-        handbook_data = json.load(f).get("handbookDict", {})
-
     for char_id, char_info in character_data.items():
+        if not isinstance(char_info, dict): continue # Skip non-dict items like "version"
         char_info["charId"] = char_id
+        
+        # Add handbook info
         handbook_info = handbook_data.get(char_id)
         if handbook_info and handbook_info.get("storyTextAudio"):
             story_text = handbook_info["storyTextAudio"][0]["stories"][0]["storyText"]
             parsed_info = parse_handbook_info(story_text)
             char_info.update(parsed_info)
 
+        # Add skill info
+        operator_skills = []
+        if char_info.get("skills"):
+            for skill_ref in char_info["skills"]:
+                skill_id = skill_ref.get("skillId")
+                if skill_id and skill_id in skill_data:
+                    full_skill_info = skill_data[skill_id]
+                    skill_levels = []
+                    for level_data in full_skill_info.get("levels", []):
+                        blackboard = {item["key"]: item["value"] for item in level_data.get("blackboard", [])}
+                        skill_levels.append(
+                            SkillLevel(
+                                name=level_data.get("name"),
+                                description=level_data.get("description"),
+                                spCost=level_data.get("spData", {}).get("spCost", 0),
+                                initialSp=level_data.get("spData", {}).get("initSp", 0),
+                                duration=blackboard.get("duration", 0.0)
+                            )
+                        )
+                    operator_skills.append(Skill(skillId=skill_id, levels=skill_levels))
+        char_info["skills"] = operator_skills
+
         temp_operators_data.append(char_info)
     
     operators_data.clear()
     operators_data.extend(temp_operators_data)
-    logging.info(f"Data loaded successfully. {len(operators_data)} operators.")
+    print(f"Data loaded successfully. {len(operators_data)} operators.")
 
-# --- Background Update Task ---
-def get_active_source_info():
-    active_key = config.get("active_source", "Kengou")
-    return config["sources"].get(active_key)
-
-def manage_data_repository():
-    source_info = get_active_source_info()
-    if not source_info:
-        logging.error(f"Active source '{config.get('active_source')}' not found in config.json.")
-        return False, None
-
-    data_path = source_info["path"]
-    data_url = source_info["url"]
-
-    if os.path.exists(data_path):
-        logging.info(f"Data directory '{data_path}' exists. Pulling latest changes...")
-        command = ["git", "pull"]
-        cwd = data_path
-    else:
-        logging.info(f"Data directory '{data_path}' not found. Cloning from {data_url}...")
-        command = ["git", "clone", data_url, data_path]
-        cwd = "."
-    
-    try:
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=True,
-            encoding='utf-8'
-        )
-        # Check if there were changes
-        if "Already up to date." in result.stdout or "Cloning into" in result.stdout:
-            logging.info("Data is up to date or has been successfully cloned.")
-            return True, data_path, False # (success, path, has_changes)
-        else:
-            logging.info("Data has been updated.")
-            return True, data_path, True # (success, path, has_changes)
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to {'pull' if os.path.exists(data_path) else 'clone'} repository: {e.stderr}")
-        return False, data_path, False
-
-def update_data_periodically():
-    while True:
-        logging.info("Background task: Checking for new game data updates...")
-        success, data_path, has_changes = manage_data_repository()
-        if success and has_changes:
-            logging.info("Background task: Reloading data due to updates.")
-            load_data(data_path)
-        
-        interval = config.get("update_interval_seconds", 3600)
-        time.sleep(interval)
 
 # --- FastAPI Events and Endpoints ---
 @app.on_event("startup")
 def startup_event():
-    logging.info("API starting up. Performing initial data setup...")
-    success, data_path, has_changes = manage_data_repository()
-    if success:
-        load_data(data_path)
-    
-    update_thread = threading.Thread(target=update_data_periodically, daemon=True)
-    update_thread.start()
-    logging.info("Started background thread for periodic data updates.")
+    print("API starting up. Performing initial data load...")
+    load_data()
+    print("Startup data load complete.")
 
 @app.get("/")
 def read_root():
