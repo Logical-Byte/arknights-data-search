@@ -1,0 +1,10 @@
+{
+  "active_source": "Logical-Byte",
+  "sources": {
+    "Logical-Byte": {
+      "url": "https://github.com/Logical-Byte/arknights-game-data.git",
+      "path": "arknights-game-data-logical-byte"
+    }
+  },
+  "update_interval_seconds": 3600
+}
