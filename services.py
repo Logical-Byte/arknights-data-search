@@ -1,23 +1,97 @@
 import json
+import time
+import os
+import urllib.request
 from pathlib import Path
 from typing import List, Dict
 
 from models import Operator, CharacterAttributes, SkillLevel, Skill, PotentialInfo, ModuleLevel, Module
 from utils import clean_markup, replace_description_placeholders, parse_handbook_info
 
-LOCAL_DATA_PATH = Path("arknights-game-data/zh_CN/gamedata/excel")
+# Configuration
+CACHE_DIR = Path("data_cache")
+REMOTE_BASE_URL = "https://torappu.prts.wiki/gamedata/latest/excel/"
+CACHE_DURATION = 86400  # 24 hours in seconds
+
+REQUIRED_FILES = [
+    "character_table.json",
+    "handbook_info_table.json",
+    "skill_table.json",
+    "favor_table.json",
+    "uniequip_table.json",
+    "battle_equip_table.json"
+]
+
 operators_data: List[dict] = []
 
+def update_cache_if_needed():
+    """
+    Checks if cache is missing or outdated (older than 24h).
+    Downloads files from REMOTE_BASE_URL if needed.
+    """
+    if not CACHE_DIR.exists():
+        print(f"Creating cache directory: {CACHE_DIR}")
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    needs_update = False
+    
+    # Check if any required file is missing
+    for filename in REQUIRED_FILES:
+        file_path = CACHE_DIR / filename
+        if not file_path.exists():
+            print(f"File missing in cache: {filename}")
+            needs_update = True
+            break
+    
+    # Check if cache is expired (using character_table.json as reference)
+    if not needs_update:
+        ref_file = CACHE_DIR / "character_table.json"
+        if ref_file.exists():
+            last_modified = ref_file.stat().st_mtime
+            if time.time() - last_modified > CACHE_DURATION:
+                print("Cache is older than 24 hours.")
+                needs_update = True
+    
+    if needs_update:
+        print("Starting data download from remote source...")
+        success = True
+        for filename in REQUIRED_FILES:
+            url = REMOTE_BASE_URL + filename
+            target_path = CACHE_DIR / filename
+            try:
+                print(f"Downloading {filename}...")
+                # Download with a timeout to prevent hanging
+                with urllib.request.urlopen(url, timeout=30) as response, open(target_path, 'wb') as out_file:
+                    out_file.write(response.read())
+            except Exception as e:
+                print(f"Failed to download {filename}: {e}")
+                success = False
+                # If download fails and we don't have a local file, we are in trouble.
+                # If we have an old file, we'll just log the error and use the old one.
+                if not target_path.exists():
+                    print(f"Critical: {filename} missing and download failed.")
+        
+        if success:
+            print("Data cache updated successfully.")
+        else:
+            print("Cache update finished with errors. Using existing files if available.")
+    else:
+        print("Cache is up to date.")
+
 def load_data():
-    print(f"Loading data from local path: {LOCAL_DATA_PATH}")
+    # 1. Update cache before loading
+    update_cache_if_needed()
+
+    print(f"Loading data from cache: {CACHE_DIR}")
     global operators_data
 
-    char_table_path = LOCAL_DATA_PATH / "character_table.json"
-    handbook_path = LOCAL_DATA_PATH / "handbook_info_table.json"
-    skill_table_path = LOCAL_DATA_PATH / "skill_table.json"
-    favor_table_path = LOCAL_DATA_PATH / "favor_table.json"
-    uniequip_table_path = LOCAL_DATA_PATH / "uniequip_table.json"
-    battle_equip_table_path = LOCAL_DATA_PATH / "battle_equip_table.json"
+    # Paths now point to the CACHE_DIR
+    char_table_path = CACHE_DIR / "character_table.json"
+    handbook_path = CACHE_DIR / "handbook_info_table.json"
+    skill_table_path = CACHE_DIR / "skill_table.json"
+    favor_table_path = CACHE_DIR / "favor_table.json"
+    uniequip_table_path = CACHE_DIR / "uniequip_table.json"
+    battle_equip_table_path = CACHE_DIR / "battle_equip_table.json"
 
     try:
         with open(char_table_path, 'r', encoding='utf-8') as f:
@@ -33,7 +107,7 @@ def load_data():
         with open(battle_equip_table_path, 'r', encoding='utf-8') as f:
             battle_equip_data = json.load(f)
     except Exception as e:
-        print(f"Failed to load or parse local data files: {e}")
+        print(f"Failed to load or parse data files: {e}")
         operators_data = []
         return
 
