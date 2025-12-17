@@ -72,6 +72,7 @@ def load_data():
     temp_subpro_map = {}
     
     # 1. Update cache before loading
+    update_cache_if_needed()
 
     print(f"Loading data from cache: {CACHE_DIR}")
     
