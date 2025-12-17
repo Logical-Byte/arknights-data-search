@@ -43,7 +43,7 @@ class Module(BaseModel):
     typeName: str
     levels: List[ModuleLevel]
 
-class Operator(BaseModel):
+class OperatorBase(BaseModel):
     charId: str
     name: str
     description: Optional[str] = None
@@ -68,6 +68,23 @@ class Operator(BaseModel):
     gender: Optional[str] = None
     birth_place: Optional[str] = None
     race: Optional[str] = None
+
+class OperatorAttributesResponse(BaseModel):
+    charId: str
+    name: str
+    attributes: Optional[CharacterAttributes] = None
+
+class OperatorSkillsResponse(BaseModel):
+    charId: str
+    name: str
+    skills: Optional[List[Skill]] = None
+
+class OperatorModulesResponse(BaseModel):
+    charId: str
+    name: str
+    modules: Optional[List[Module]] = None
+
+class Operator(OperatorBase):
     attributes: Optional[CharacterAttributes] = None
     skills: Optional[List[Skill]] = None
     potentials: Optional[List[PotentialInfo]] = None

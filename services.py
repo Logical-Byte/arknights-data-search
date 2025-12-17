@@ -213,6 +213,61 @@ def load_data():
     operators_data.extend(temp_operators_data)
     print(f"Data loaded successfully. {len(operators_data)} operators.")
 
+def filter_operators(
+    name: str = None,
+    profession: str = None,
+    sub_profession: str = None,
+    rarity: int = None,
+    position: str = None,
+    tag: str = None,
+    nation: str = None,
+    gender: str = None,
+    birth_place: str = None,
+    race: str = None,
+    max_level: int = None,
+    obtain_approach: str = None
+) -> List[dict]:
+    results = operators_data
+
+    if name:
+        results = [op for op in results if op.get("name") and name.lower() in op.get("name").lower()]
+
+    if profession:
+        results = [op for op in results if op.get("profession") and op.get("profession").lower() == profession.lower()]
+    
+    if sub_profession:
+        results = [op for op in results if op.get("subProfessionId") and op.get("subProfessionId").lower() == sub_profession.lower()]
+
+    if rarity:
+        rarity_str = f"TIER_{rarity}"
+        results = [op for op in results if op.get("rarity") == rarity_str]
+
+    if position:
+        results = [op for op in results if op.get("position") and op.get("position").lower() == position.lower()]
+
+    if tag:
+        results = [op for op in results if op.get("tagList") and tag.lower() in [t.lower() for t in op["tagList"]]]
+    
+    if nation:
+        results = [op for op in results if op.get("nationId") and op.get("nationId").lower() == nation.lower()]
+
+    if gender:
+        results = [op for op in results if op.get("gender") and op.get("gender").lower() == gender.lower()]
+
+    if birth_place:
+        results = [op for op in results if op.get("birth_place") and op.get("birth_place").lower() == birth_place.lower()]
+    
+    if race:
+        results = [op for op in results if op.get("race") and op.get("race").lower() == race.lower()]
+    
+    if max_level is not None:
+        results = [op for op in results if len(op.get("phases", [])) > max_level]
+
+    if obtain_approach:
+        results = [op for op in results if op.get("itemObtainApproach") and op.get("itemObtainApproach").lower() == obtain_approach.lower()]
+    
+    return results
+
 def calculate_attributes(char_info: dict, elite: int = None, level: int = None, trust: int = 100, potential: int = 5) -> CharacterAttributes:
     phases = char_info.get("phases", [])
     if not phases:
