@@ -43,3 +43,6 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+
+# Data files
+data_cache/
