@@ -2,27 +2,15 @@ import json
 import time
 import os
 import urllib.request
-from pathlib import Path
-from typing import List, Dict
+from app.models import CharacterAttributes, SkillLevel, Skill, PotentialInfo, ModuleLevel, Module
+from app.utils import clean_markup, replace_description_placeholders, parse_handbook_info
+from app.config import CACHE_DIR, REMOTE_BASE_URL, CACHE_DURATION, REQUIRED_FILES
+from app.db.repository import db
 
-from models import Operator, CharacterAttributes, SkillLevel, Skill, PotentialInfo, ModuleLevel, Module
-from utils import clean_markup, replace_description_placeholders, parse_handbook_info
-
-# Configuration
-CACHE_DIR = Path("data_cache")
-REMOTE_BASE_URL = "https://torappu.prts.wiki/gamedata/latest/excel/"
-CACHE_DURATION = 86400  # 24 hours in seconds
-
-REQUIRED_FILES = [
-    "character_table.json",
-    "handbook_info_table.json",
-    "skill_table.json",
-    "favor_table.json",
-    "uniequip_table.json",
-    "battle_equip_table.json"
-]
-
-operators_data: List[dict] = []
+# Global State
+operators_data = []
+NATION_MAP = {}
+SUBPRO_MAP = {}
 
 def update_cache_if_needed():
     """
@@ -79,12 +67,14 @@ def update_cache_if_needed():
         print("Cache is up to date.")
 
 def load_data():
+    # Local variables to hold data before committing to DB
+    temp_nation_map = {}
+    temp_subpro_map = {}
+    
     # 1. Update cache before loading
-    update_cache_if_needed()
 
     print(f"Loading data from cache: {CACHE_DIR}")
-    global operators_data
-
+    
     # Paths now point to the CACHE_DIR
     char_table_path = CACHE_DIR / "character_table.json"
     handbook_path = CACHE_DIR / "handbook_info_table.json"
@@ -92,6 +82,7 @@ def load_data():
     favor_table_path = CACHE_DIR / "favor_table.json"
     uniequip_table_path = CACHE_DIR / "uniequip_table.json"
     battle_equip_table_path = CACHE_DIR / "battle_equip_table.json"
+    handbook_team_path = CACHE_DIR / "handbook_team_table.json"
 
     try:
         with open(char_table_path, 'r', encoding='utf-8') as f:
@@ -103,12 +94,31 @@ def load_data():
         with open(favor_table_path, 'r', encoding='utf-8') as f:
             favor_data = json.load(f).get("favorFrames", {})
         with open(uniequip_table_path, 'r', encoding='utf-8') as f:
-            uniequip_data = json.load(f).get("equipDict", {})
+            uniequip_full_data = json.load(f)
+            uniequip_data = uniequip_full_data.get("equipDict", {})
+            # Load sub-profession mapping from uniequip_table.json
+            subpro_data = uniequip_full_data.get("subProfDict", {})
         with open(battle_equip_table_path, 'r', encoding='utf-8') as f:
             battle_equip_data = json.load(f)
+        
+        # Load mapping tables
+        if handbook_team_path.exists():
+            with open(handbook_team_path, 'r', encoding='utf-8') as f:
+                team_data = json.load(f)
+                for team_id, team_info in team_data.items():
+                    if isinstance(team_info, dict) and "powerName" in team_info:
+                        temp_nation_map[team_info["powerName"]] = team_id
+        
+        # Populate SUBPRO_MAP from uniequip_table.json's subProfDict
+        for sub_id, sub_info in subpro_data.items():
+            if isinstance(sub_info, dict) and "subProfessionName" in sub_info:
+                # Use subProfessionId if available, otherwise fallback to key
+                # Assuming uniequip_table.json has correct IDs
+                prof_id = sub_info.get("subProfessionId", sub_id)
+                temp_subpro_map[sub_info["subProfessionName"]] = prof_id
+
     except Exception as e:
         print(f"Failed to load or parse data files: {e}")
-        operators_data = []
         return
 
     # Organize modules by charId
@@ -128,7 +138,6 @@ def load_data():
         char_info["description"] = clean_markup(char_info.get("description"))
         
         # --- Calculate Max Stats ---
-        # Note: We still calculate a default 'attributes' set here, but the API can overwrite it dynamically.
         final_phase = char_info["phases"][-1]
         max_level_stats = final_phase["attributesKeyFrames"][-1]["data"]
         
@@ -217,7 +226,6 @@ def load_data():
                         # Attributes
                         attrs = {}
                         # Create a base blackboard from attributes for description replacement
-                        # This allows descriptions to reference global stat buffs like {attack_speed}
                         base_blackboard = {}
                         for attr in phase.get("attributeBlackboard", []):
                             attrs[attr["key"]] = attr["value"]
@@ -232,7 +240,7 @@ def load_data():
                             if part.get("target") == "TRAIT" and part.get("overrideTraitDataBundle"):
                                 candidates = part["overrideTraitDataBundle"].get("candidates", [])
                                 if candidates:
-                                    cand = candidates[-1]
+                                    cand = candidates[-1] 
                                     desc_template = cand.get("overrideDescripton") or cand.get("additionalDescription")
                                     if desc_template:
                                         # Merge attribute blackboard with candidate blackboard
@@ -247,10 +255,7 @@ def load_data():
                                     cand = candidates[-1]
                                     desc_template = cand.get("upgradeDescription")
                                     if desc_template:
-                                        # Merge attribute blackboard with candidate blackboard (though talent parts often lack local blackboard)
-                                        # Some talents might reference attributes or have their own params in a different structure?
-                                        # Usually talent text is static or uses params. If params are missing in candidate['blackboard'], check if they exist elsewhere.
-                                        # For now, we try to use the combined blackboard if candidate has one.
+                                        # Merge attribute blackboard with candidate blackboard
                                         cand_blackboard = {item["key"]: item["value"] for item in cand.get("blackboard", [])} if cand.get("blackboard") else {}
                                         combined_blackboard = {**base_blackboard, **cand_blackboard}
                                         talent_up = replace_description_placeholders(clean_markup(desc_template), combined_blackboard)
@@ -283,169 +288,5 @@ def load_data():
 
         temp_operators_data.append(char_info)
     
-    operators_data.clear()
-    operators_data.extend(temp_operators_data)
-    print(f"Data loaded successfully. {len(operators_data)} operators.")
-
-def filter_operators(
-    name: str = None,
-    profession: str = None,
-    sub_profession: str = None,
-    rarity: int = None,
-    position: str = None,
-    tag: str = None,
-    nation: str = None,
-    gender: str = None,
-    birth_place: str = None,
-    race: str = None,
-    max_level: int = None,
-    obtain_approach: str = None
-) -> List[dict]:
-    results = operators_data
-
-    if name:
-        results = [op for op in results if op.get("name") and name.lower() in op.get("name").lower()]
-
-    if profession:
-        results = [op for op in results if op.get("profession") and op.get("profession").lower() == profession.lower()]
-    
-    if sub_profession:
-        results = [op for op in results if op.get("subProfessionId") and op.get("subProfessionId").lower() == sub_profession.lower()]
-
-    if rarity:
-        rarity_str = f"TIER_{rarity}"
-        results = [op for op in results if op.get("rarity") == rarity_str]
-
-    if position:
-        results = [op for op in results if op.get("position") and op.get("position").lower() == position.lower()]
-
-    if tag:
-        results = [op for op in results if op.get("tagList") and tag.lower() in [t.lower() for t in op["tagList"]]]
-    
-    if nation:
-        results = [op for op in results if op.get("nationId") and op.get("nationId").lower() == nation.lower()]
-
-    if gender:
-        results = [op for op in results if op.get("gender") and op.get("gender").lower() == gender.lower()]
-
-    if birth_place:
-        results = [op for op in results if op.get("birth_place") and op.get("birth_place").lower() == birth_place.lower()]
-    
-    if race:
-        results = [op for op in results if op.get("race") and op.get("race").lower() == race.lower()]
-    
-    if max_level is not None:
-        results = [op for op in results if len(op.get("phases", [])) > max_level]
-
-    if obtain_approach:
-        results = [op for op in results if op.get("itemObtainApproach") and op.get("itemObtainApproach").lower() == obtain_approach.lower()]
-    
-    return results
-
-def calculate_attributes(char_info: dict, elite: int = None, level: int = None, trust: int = 100, potential: int = 5) -> CharacterAttributes:
-    phases = char_info.get("phases", [])
-    if not phases:
-        return None
-
-    if elite is None:
-        elite = len(phases) - 1
-    
-    elite = max(0, min(elite, len(phases) - 1))
-    current_phase = phases[elite]
-    max_level_in_phase = current_phase.get("maxLevel", 1)
-
-    if level is None:
-        level = max_level_in_phase
-    
-    level = max(1, min(level, max_level_in_phase))
-
-    # 1. Base Attributes (Interpolation)
-    key_frames = current_phase.get("attributesKeyFrames", [])
-    base_stats = {}
-    
-    if not key_frames:
-        pass 
-    elif len(key_frames) == 1:
-        base_stats = key_frames[0]["data"]
-    else:
-        lower_frame = key_frames[0]
-        upper_frame = key_frames[-1]
-        
-        for frame in key_frames:
-            if frame["level"] <= level:
-                lower_frame = frame
-            if frame["level"] >= level:
-                upper_frame = frame
-                break 
-        
-        if lower_frame["level"] == upper_frame["level"]:
-            base_stats = lower_frame["data"]
-        else:
-            ratio = (level - lower_frame["level"]) / (upper_frame["level"] - lower_frame["level"])
-            for key in lower_frame["data"]:
-                val_lower = lower_frame["data"].get(key, 0)
-                val_upper = upper_frame["data"].get(key, 0)
-                if isinstance(val_lower, (int, float)) and isinstance(val_upper, (int, float)):
-                     val = val_lower + (val_upper - val_lower) * ratio
-                     base_stats[key] = val
-                else:
-                    base_stats[key] = val_lower
-
-    # 2. Trust Bonus (Interpolation 0-100)
-    trust_stats = {"maxHp": 0, "atk": 0, "def": 0, "magicResistance": 0}
-    favor_frames = char_info.get("favorKeyFrames", [])
-    if favor_frames:
-        calc_trust = max(0, min(trust, 100))
-        lower_f = favor_frames[0]
-        upper_f = favor_frames[-1]
-        
-        for f in favor_frames:
-            if f["level"] <= calc_trust:
-                lower_f = f
-            if f["level"] >= calc_trust:
-                upper_f = f
-                break
-        
-        if lower_f["level"] == upper_f["level"]:
-             trust_stats = lower_f["data"]
-        else:
-            ratio = (calc_trust - lower_f["level"]) / (upper_f["level"] - lower_f["level"])
-            for key in ["maxHp", "atk", "def", "magicResistance"]:
-                val_l = lower_f["data"].get(key, 0)
-                val_u = upper_f["data"].get(key, 0)
-                trust_stats[key] = val_l + (val_u - val_l) * ratio
-
-    # 3. Potential Bonus
-    pot_stats = {"maxHp": 0, "atk": 0, "def": 0, "magicResistance": 0, "cost": 0, "blockCnt": 0, "respawnTime": 0, "attackSpeed": 0}
-    potential_ranks = char_info.get("potentialRanks", [])
-    valid_potential_idx = max(0, min(potential, len(potential_ranks)))
-    
-    for i in range(valid_potential_idx):
-        pot = potential_ranks[i]
-        if pot["buff"]:
-            for mod in pot["buff"]["attributes"]["attributeModifiers"]:
-                attr_type = mod["attributeType"]
-                value = mod["value"]
-                if attr_type == 0: pot_stats["maxHp"] += value
-                elif attr_type == 1: pot_stats["atk"] += value
-                elif attr_type == 2: pot_stats["def"] += value
-                elif attr_type == 3: pot_stats["magicResistance"] += value
-                elif attr_type == 21: pot_stats["cost"] += value
-                elif attr_type == 22: pot_stats["blockCnt"] += value
-                elif attr_type == 23: pot_stats["respawnTime"] += value
-                elif attr_type == 7: pot_stats["attackSpeed"] += value
-
-    final_stats = {
-        "maxHp": int(base_stats.get("maxHp", 0) + trust_stats.get("maxHp", 0) + pot_stats["maxHp"]),
-        "atk": int(base_stats.get("atk", 0) + trust_stats.get("atk", 0) + pot_stats["atk"]),
-        "def_": int(base_stats.get("def", 0) + trust_stats.get("def", 0) + pot_stats["def"]),
-        "magicResistance": base_stats.get("magicResistance", 0.0) + trust_stats.get("magicResistance", 0.0) + pot_stats["magicResistance"],
-        "cost": int(base_stats.get("cost", 0) + pot_stats["cost"]),
-        "blockCnt": int(base_stats.get("blockCnt", 0) + pot_stats["blockCnt"]),
-        "moveSpeed": base_stats.get("moveSpeed", 1.0),
-        "attackSpeed": base_stats.get("attackSpeed", 100.0) + pot_stats["attackSpeed"],
-        "baseAttackTime": base_stats.get("baseAttackTime", 1.0),
-        "respawnTime": int(base_stats.get("respawnTime", 0) + pot_stats["respawnTime"])
-    }
-    
-    return CharacterAttributes(**final_stats)
+    db.load_data(temp_operators_data, temp_nation_map, temp_subpro_map)
+    print(f"Data loaded successfully. {len(temp_operators_data)} operators.")
