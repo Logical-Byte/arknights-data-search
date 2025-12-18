@@ -21,20 +21,35 @@ def run_command(command, show_output=False):
             print(result.stdout)
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        print(f"Error executing '{command}': {e.stderr}")
+        # 即使失败也返回 None，不抛出异常
         return None
 
 def get_file_hash(filepath):
     """获取文件的简单哈希（用于检测变更）"""
     if not os.path.exists(filepath):
         return None
-    # 在 Windows 上使用简单的读取，或者使用 git hash-object
     return run_command(f"git hash-object {filepath}")
+
+def ensure_safe_directory():
+    """解决 Linux/Docker 下 fatal: detected dubious ownership 错误"""
+    try:
+        current_dir = os.getcwd().replace("\\", "/")
+        # 将当前目录标记为安全目录
+        subprocess.run(
+            f"git config --global --add safe.directory {current_dir}", 
+            shell=True, 
+            capture_output=True
+        )
+    except Exception:
+        pass
 
 def check_and_update(verbose=False):
     """检查并执行更新"""
     if verbose:
         print(f"[{time.strftime('%H:%M:%S')}] Checking for git updates...")
+    
+    # 确保目录安全
+    ensure_safe_directory()
     
     # 1. 获取远程最新状态
     if run_command("git fetch") is None:
@@ -42,12 +57,24 @@ def check_and_update(verbose=False):
 
     # 2. 获取本地和远程的 Commit Hash
     local_hash = run_command("git rev-parse HEAD")
-    # @{u} 代表当前分支的上游分支（如 origin/main）
-    remote_hash = run_command("git rev-parse @{u}")
+    
+    # 尝试获取当前分支名
+    current_branch = run_command("git rev-parse --abbrev-ref HEAD")
+    
+    remote_hash = None
+    if current_branch and current_branch != "HEAD":
+        # 优先尝试标准上游
+        remote_hash = run_command("git rev-parse @{u}")
+        # 如果失败，且知道分支名，尝试 origin/分支名
+        if not remote_hash:
+            remote_hash = run_command(f"git rev-parse origin/{current_branch}")
+    else:
+        # Detached HEAD state? 尝试直接比较 origin/main 或 origin/master
+        remote_hash = run_command("git rev-parse origin/main")
+        if not remote_hash:
+             remote_hash = run_command("git rev-parse origin/master")
 
     if not local_hash or not remote_hash:
-        if verbose:
-            print("Warning: Could not determine git hashes. Ensure this branch tracks a remote branch.")
         return
 
     # 3. 比较 Hash
@@ -59,18 +86,20 @@ def check_and_update(verbose=False):
         
         # 4. 执行更新
         print("Pulling changes from git...")
-        pull_output = run_command("git pull", show_output=True)
+        if current_branch == "HEAD":
+             pull_output = run_command(f"git checkout {remote_hash}", show_output=True)
+        else:
+             pull_output = run_command("git pull", show_output=True)
         
-        if pull_output:
+        if pull_output is not None:
             print("Code updated successfully.")
             
             # 5. 检查是否需要更新依赖
             req_hash_after = get_file_hash("requirements.txt")
             if req_hash_before != req_hash_after:
                 print("requirements.txt changed. Installing new dependencies...")
-                # 使用当前环境的 pip
                 python_exe = sys.executable
-                run_command(f"\"{python_exe}\" -m pip install -r requirements.txt", show_output=True)
+                run_command(f'"{python_exe}" -m pip install -r requirements.txt', show_output=True)
             
             print("Update process finished. Service should restart automatically via uvicorn reload.")
     elif verbose:
@@ -78,6 +107,7 @@ def check_and_update(verbose=False):
 
 def main():
     print(f"Auto-update script started. Monitoring git repository every {CHECK_INTERVAL} seconds.")
+    ensure_safe_directory()
     try:
         while True:
             check_and_update()
