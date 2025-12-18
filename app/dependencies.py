@@ -4,6 +4,7 @@ from fastapi import Query
 
 @dataclass
 class FilterParams:
+    char_id: Optional[str] = Query(None, title="角色ID", description="干员的唯一标识符 (精确搜索)")
     name: Optional[str] = Query(None, title="名称", description="干员的名称 (支持模糊搜索)")
     profession: Optional[str] = Query(None, title="职业", description="干员的职业")
     sub_profession: Optional[str] = Query(None, title="分支", description="干员的子职业")

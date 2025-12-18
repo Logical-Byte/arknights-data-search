@@ -17,6 +17,7 @@ class OperatorRepository:
         
     def filter_operators(
         self,
+        char_id: str = None,
         name: str = None,
         profession: str = None,
         sub_profession: str = None,
@@ -30,6 +31,9 @@ class OperatorRepository:
         obtain_approach: str = None
     ) -> List[dict]:
         results = self._operators
+
+        if char_id:
+            results = [op for op in results if op.get("charId") == char_id]
 
         if name:
             results = [op for op in results if op.get("name") and name.lower() in op.get("name").lower()]

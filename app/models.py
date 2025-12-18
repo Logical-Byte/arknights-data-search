@@ -35,12 +35,14 @@ class ModuleLevel(BaseModel):
     trait_upgrade: Optional[str] = None
     talent_upgrade: Optional[str] = None
 
-class Module(BaseModel):
+class ModuleBase(BaseModel):
     moduleId: str
     name: str
     description: Optional[str] = None
     typeIcon: str
     typeName: str
+
+class Module(ModuleBase):
     levels: List[ModuleLevel]
 
 class OperatorBase(BaseModel):
@@ -68,6 +70,7 @@ class OperatorBase(BaseModel):
     gender: Optional[str] = None
     birth_place: Optional[str] = None
     race: Optional[str] = None
+    modules: Optional[List[ModuleBase]] = None
 
 class OperatorAttributesResponse(BaseModel):
     charId: str

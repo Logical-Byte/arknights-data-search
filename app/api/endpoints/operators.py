@@ -19,6 +19,7 @@ def search_operators(
     calc: CalculationParams = Depends()
 ):
     results = db.filter_operators(
+        char_id=filters.char_id,
         name=filters.name, profession=filters.profession, sub_profession=filters.sub_profession,
         rarity=filters.rarity, position=filters.position, tags=[filters.tag] if filters.tag else None,
         nation=filters.nation, gender=filters.gender, birth_place=filters.birth_place,
@@ -42,6 +43,7 @@ def search_operators(
 @router.get("/operators/basic", response_model=List[OperatorBase])
 def get_operators_basic(filters: FilterParams = Depends()):
     return db.filter_operators(
+        char_id=filters.char_id,
         name=filters.name, profession=filters.profession, sub_profession=filters.sub_profession,
         rarity=filters.rarity, position=filters.position, tags=[filters.tag] if filters.tag else None,
         nation=filters.nation, gender=filters.gender, birth_place=filters.birth_place,
@@ -54,6 +56,7 @@ def get_operators_attributes(
     calc: CalculationParams = Depends()
 ):
     results = db.filter_operators(
+        char_id=filters.char_id,
         name=filters.name, profession=filters.profession, sub_profession=filters.sub_profession,
         rarity=filters.rarity, position=filters.position, tags=[filters.tag] if filters.tag else None,
         nation=filters.nation, gender=filters.gender, birth_place=filters.birth_place,
@@ -79,6 +82,7 @@ def get_operators_attributes(
 @router.get("/operators/skills", response_model=List[OperatorSkillsResponse])
 def get_operators_skills(filters: FilterParams = Depends()):
     return db.filter_operators(
+        char_id=filters.char_id,
         name=filters.name, profession=filters.profession, sub_profession=filters.sub_profession,
         rarity=filters.rarity, position=filters.position, tags=[filters.tag] if filters.tag else None,
         nation=filters.nation, gender=filters.gender, birth_place=filters.birth_place,
@@ -88,6 +92,7 @@ def get_operators_skills(filters: FilterParams = Depends()):
 @router.get("/operators/modules", response_model=List[OperatorModulesResponse])
 def get_operators_modules(filters: FilterParams = Depends()):
     return db.filter_operators(
+        char_id=filters.char_id,
         name=filters.name, profession=filters.profession, sub_profession=filters.sub_profession,
         rarity=filters.rarity, position=filters.position, tags=[filters.tag] if filters.tag else None,
         nation=filters.nation, gender=filters.gender, birth_place=filters.birth_place,
