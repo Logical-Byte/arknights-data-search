@@ -20,4 +20,4 @@ if __name__ == "__main__":
     
     # 运行 API 服务
     # 注意：reload=True 配合 git pull 会在代码拉取后自动重启服务
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
