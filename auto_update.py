@@ -31,8 +31,10 @@ def get_file_hash(filepath):
     # 在 Windows 上使用简单的读取，或者使用 git hash-object
     return run_command(f"git hash-object {filepath}")
 
-def check_and_update():
-    print(f"[{time.strftime('%H:%M:%S')}] Checking for git updates...")
+def check_and_update(verbose=False):
+    """检查并执行更新"""
+    if verbose:
+        print(f"[{time.strftime('%H:%M:%S')}] Checking for git updates...")
     
     # 1. 获取远程最新状态
     if run_command("git fetch") is None:
@@ -44,18 +46,19 @@ def check_and_update():
     remote_hash = run_command("git rev-parse @{u}")
 
     if not local_hash or not remote_hash:
-        print("Warning: Could not determine git hashes. Ensure this branch tracks a remote branch.")
+        if verbose:
+            print("Warning: Could not determine git hashes. Ensure this branch tracks a remote branch.")
         return
 
     # 3. 比较 Hash
     if local_hash != remote_hash:
-        print(f"Update found! Local: {local_hash[:7]} -> Remote: {remote_hash[:7]}")
+        print(f"[{time.strftime('%H:%M:%S')}] Update found! Local: {local_hash[:7]} -> Remote: {remote_hash[:7]}")
         
         # 记录更新前 requirements.txt 的状态
         req_hash_before = get_file_hash("requirements.txt")
         
         # 4. 执行更新
-        print("Pulling changes...")
+        print("Pulling changes from git...")
         pull_output = run_command("git pull", show_output=True)
         
         if pull_output:
@@ -69,10 +72,8 @@ def check_and_update():
                 python_exe = sys.executable
                 run_command(f"\"{python_exe}\" -m pip install -r requirements.txt", show_output=True)
             
-            print("Update process finished.")
-            # 注意：如果您使用 uvicorn --reload 运行服务，它会自动检测代码变更并重启。
-            # 否则，您可能需要在这里添加逻辑来重启服务进程。
-    else:
+            print("Update process finished. Service should restart automatically via uvicorn reload.")
+    elif verbose:
         print("Already up to date.")
 
 def main():
