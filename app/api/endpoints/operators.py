@@ -13,7 +13,7 @@ from app.db.repository import db
 
 router = APIRouter()
 
-@router.get("/operators", response_model=List[Operator])
+@router.get("/operators", response_model=List[Operator], operation_id="searchOperators")
 def search_operators(
     filters: FilterParams = Depends(),
     calc: CalculationParams = Depends()
@@ -40,7 +40,7 @@ def search_operators(
 
     return final_results
 
-@router.get("/operators/basic", response_model=List[OperatorBase])
+@router.get("/operators/basic", response_model=List[OperatorBase], operation_id="getOperatorsBasic")
 def get_operators_basic(filters: FilterParams = Depends()):
     return db.filter_operators(
         char_id=filters.char_id,
@@ -50,7 +50,7 @@ def get_operators_basic(filters: FilterParams = Depends()):
         race=filters.race, obtain_approach=filters.obtain_approach
     )
 
-@router.get("/operators/attributes", response_model=List[OperatorAttributesResponse])
+@router.get("/operators/attributes", response_model=List[OperatorAttributesResponse], operation_id="getOperatorsAttributes")
 def get_operators_attributes(
     filters: FilterParams = Depends(),
     calc: CalculationParams = Depends()
@@ -79,7 +79,7 @@ def get_operators_attributes(
         })
     return final_results
 
-@router.get("/operators/skills", response_model=List[OperatorSkillsResponse])
+@router.get("/operators/skills", response_model=List[OperatorSkillsResponse], operation_id="getOperatorsSkills")
 def get_operators_skills(filters: FilterParams = Depends()):
     return db.filter_operators(
         char_id=filters.char_id,
@@ -89,7 +89,7 @@ def get_operators_skills(filters: FilterParams = Depends()):
         race=filters.race, obtain_approach=filters.obtain_approach
     )
 
-@router.get("/operators/modules", response_model=List[OperatorModulesResponse])
+@router.get("/operators/modules", response_model=List[OperatorModulesResponse], operation_id="getOperatorsModules")
 def get_operators_modules(filters: FilterParams = Depends()):
     return db.filter_operators(
         char_id=filters.char_id,

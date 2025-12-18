@@ -1,7 +1,11 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from pydantic import BaseModel
 from app.core.loader import load_data
 from app.api.endpoints import operators
+
+class RootResponse(BaseModel):
+    message: str
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -16,7 +20,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-@app.get("/")
+@app.get("/", response_model=RootResponse, operation_id="readRoot")
 def read_root():
     return {"message": "欢迎使用明日方舟干员数据查询 API"}
 

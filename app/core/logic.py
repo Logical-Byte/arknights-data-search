@@ -137,7 +137,7 @@ def calculate_attributes(char_info: dict, elite: int = None, level: int = None, 
     final_stats = {
         "maxHp": int(base_stats.get("maxHp", 0) + trust_stats.get("maxHp", 0) + pot_stats["maxHp"]),
         "atk": int(base_stats.get("atk", 0) + trust_stats.get("atk", 0) + pot_stats["atk"]),
-        "def_": int(base_stats.get("def", 0) + trust_stats.get("def", 0) + pot_stats["def"]),
+        "def": int(base_stats.get("def", 0) + trust_stats.get("def", 0) + pot_stats["def"]),
         "magicResistance": base_stats.get("magicResistance", 0.0) + trust_stats.get("magicResistance", 0.0) + pot_stats["magicResistance"],
         "cost": int(base_stats.get("cost", 0) + pot_stats["cost"]),
         "blockCnt": int(base_stats.get("blockCnt", 0) + pot_stats["blockCnt"]),

@@ -1,10 +1,12 @@
 from typing import List, Optional, Dict
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 
 class CharacterAttributes(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     maxHp: int
     atk: int
-    def_: int
+    def_: int = Field(alias="def")
     magicResistance: float
     cost: int
     blockCnt: int
