@@ -36,7 +36,26 @@ class OperatorRepository:
             results = [op for op in results if op.get("charId") == char_id]
 
         if name:
-            results = [op for op in results if op.get("name") and name.lower() in op.get("name").lower()]
+            name_lower = name.lower()
+            filtered_results = []
+            for op in results:
+                # Check operator name
+                if op.get("name") and name_lower in op.get("name").lower():
+                    filtered_results.append(op)
+                    continue
+                
+                # Check token names
+                # op["tokens"] holds List[Token] objects
+                if op.get("tokens"):
+                    found_token = False
+                    for token in op["tokens"]:
+                        if token.name and name_lower in token.name.lower():
+                            filtered_results.append(op)
+                            found_token = True
+                            break
+                    if found_token:
+                        continue
+            results = filtered_results
 
         if profession:
             mapped_prof = PROFESSION_MAP.get(profession, profession)

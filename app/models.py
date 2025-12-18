@@ -45,6 +45,13 @@ class ModuleBase(BaseModel):
 class Module(ModuleBase):
     levels: List[ModuleLevel]
 
+class Token(BaseModel):
+    tokenId: str
+    name: str
+    description: Optional[str] = None
+    profession: Optional[str] = None
+    subProfessionId: Optional[str] = None
+
 class OperatorBase(BaseModel):
     charId: str
     name: str
@@ -71,6 +78,7 @@ class OperatorBase(BaseModel):
     birth_place: Optional[str] = None
     race: Optional[str] = None
     modules: Optional[List[ModuleBase]] = None
+    tokens: Optional[List[Token]] = None
 
 class OperatorAttributesResponse(BaseModel):
     charId: str

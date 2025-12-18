@@ -2,7 +2,7 @@ import json
 import time
 import os
 import urllib.request
-from app.models import CharacterAttributes, SkillLevel, Skill, PotentialInfo, ModuleLevel, Module
+from app.models import CharacterAttributes, SkillLevel, Skill, PotentialInfo, ModuleLevel, Module, Token
 from app.utils import clean_markup, replace_description_placeholders, parse_handbook_info
 from app.config import CACHE_DIR, REMOTE_BASE_URL, CACHE_DURATION, REQUIRED_FILES
 from app.db.repository import db
@@ -134,7 +134,12 @@ def load_data():
 
     temp_operators_data = []
     for char_id, char_info in character_data.items():
-        if not isinstance(char_info, dict) or char_info.get("subProfessionId") == "notchar": continue
+        # Enhanced filtering to exclude tokens and non-characters
+        if not isinstance(char_info, dict): continue
+        sub_prof = char_info.get("subProfessionId", "")
+        if sub_prof == "notchar" or sub_prof.startswith("notchar"): continue
+        if char_info.get("profession") == "TOKEN": continue
+
         char_info["charId"] = char_id
         char_info["description"] = clean_markup(char_info.get("description"))
         
@@ -183,10 +188,28 @@ def load_data():
             parsed_info = parse_handbook_info(story_text)
             char_info.update(parsed_info)
 
-        # --- Add Skill Info ---
+        # --- Add Skill Info & Extract Tokens ---
         operator_skills = []
+        operator_tokens = []
+        token_ids_added = set()
+        
         if char_info.get("skills"):
             for skill_ref in char_info["skills"]:
+                # 1. Extract Token Info
+                token_id = skill_ref.get("overrideTokenKey")
+                if token_id and token_id not in token_ids_added:
+                    token_data = character_data.get(token_id)
+                    if token_data:
+                        operator_tokens.append(Token(
+                            tokenId=token_id,
+                            name=token_data.get("name"),
+                            description=clean_markup(token_data.get("description")),
+                            profession=token_data.get("profession"),
+                            subProfessionId=token_data.get("subProfessionId")
+                        ))
+                        token_ids_added.add(token_id)
+                
+                # 2. Build Skill Object
                 skill_id = skill_ref.get("skillId")
                 if skill_id and skill_id in skill_data:
                     full_skill_info = skill_data[skill_id]
@@ -211,6 +234,7 @@ def load_data():
                         )
                     operator_skills.append(Skill(skillId=skill_id, levels=skill_levels))
         char_info["skills"] = operator_skills
+        char_info["tokens"] = operator_tokens
 
         # --- Add Module Info ---
         operator_modules = []
@@ -277,7 +301,7 @@ def load_data():
                     levels=module_levels
                 ))
         char_info["modules"] = operator_modules
-
+        
         # --- Add Potential Info ---
         operator_potentials = []
         if char_info.get("potentialRanks"):
